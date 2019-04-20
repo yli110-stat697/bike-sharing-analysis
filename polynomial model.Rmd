@@ -1,0 +1,191 @@
+---
+title: "Bike sharing"
+output: html_notebook
+---
+#data prepare
+```{r}
+day <- read.csv("day.csv")
+str(day)
+```
+
+```{r}
+boxplot(day$cnt,main="total daily count")
+```
+
+
+
+
+the first column, instant, is just the list of case number, can be dropped
+season,yr,month,weekday defines the dteday, so we do not want to include them
+
+```{r}
+cnt <- day[ , c(-1,-2,-4,-5,-7)]
+str(cnt)
+```
+
+combine holiday and workingday cuz we want to analyze holiday.weekend as a whole
+```{r}
+cnt$holiday.weekend <- ifelse(cnt$holiday ==1 | cnt$workingday ==0, 1, 0)
+str(cnt)
+```
+
+to make the codes easier,
+```{r}
+cnt <- cnt[ , c(-2,-3,-6)]
+str(cnt)
+```
+
+
+#scatterplot
+
+Scatterplot matrix to check colinearity
+```{r}
+library(psych)
+pairs.panels(cnt[c("season","holiday.weekend","weathersit","temp","hum","windspeed","cnt")])
+```
+from the graph above
+1. holiday.weekend may not be a significant predictor
+2. temp and hum might be second order
+
+check second order of temp
+```{r}
+scatter.smooth(cnt$temp,cnt$cnt,col="red")
+```
+
+check second order of hum
+```{r}
+scatter.smooth(cnt$hum,cnt$cnt,col="blue")
+```
+
+
+
+#AIC
+```{r}
+model_null <- lm(cnt~1,data=cnt)
+model_full <- lm(cnt~factor(holiday.weekend)+factor(season)+factor(weathersit)+poly(temp,2, raw=FALSE)+poly(hum, 2, raw = FALSE)+windspeed,data=cnt)
+```
+
+
+```{r}
+step(model_null,scope = list(lower=model_null,upper=model_full),direction = "forward")
+```
+
+#additive model
+```{r}
+model_additive<-lm(cnt~factor(season)+factor(holiday.weekend)+factor(weathersit)+temp+hum+windspeed,data=cnt)
+summary(model_additive)
+```
+
+turns out holiday.weekend is not significant as guessed before
+#drop the non-significant predictor
+```{r}
+model_additive2 <- lm(cnt~factor(season)+factor(weathersit)+temp+hum+windspeed,data=cnt)
+summary(model_additive2)
+```
+try temp and season interaction
+```{r}
+model_interact <- lm(cnt~factor(season)*temp+factor(weathersit)+hum+windspeed,data=cnt)
+summary(model_interact)
+```
+
+
+#polynomial model
+```{r}
+model_poly1 <- lm(cnt~poly(temp,2,raw = FALSE)+factor(season)+factor(weathersit)+hum+windspeed ,data=cnt)
+summary(model_poly1)
+```
+```{r}
+model_poly2 <- lm(cnt~poly(temp,2,raw = FALSE)+poly(hum,2,raw = FALSE)+factor(season)+factor(weathersit)+windspeed,data=cnt)
+summary(model_poly2)
+```
+
+so final model is the two-quadratic model
+```{r}
+model_final <- model_poly2
+summary(model_final)
+```
+```{r}
+anova(model_final,model_additive2)
+```
+quadratic term is significant, do not drop
+
+
+how could holiday.weekend not significant?
+#compare casual and register Vs holiday.weekend
+```{r}
+par(mfrow=c(1,2))
+boxplot(casual~holiday.weekend,data=cnt, main="casual users",xlab="holiday/weekend",ylab = "count")
+boxplot(registered~holiday.weekend,data=cnt,main="registered users",xlab="holiday/weekend", ylab = "count")
+```
+
+
+
+#casual model
+```{r}
+library(psych)
+pairs.panels(cnt[c("season","holiday.weekend","weathersit","temp","hum","windspeed","casual")])
+```
+
+```{r}
+model_casual <- lm(casual~poly(temp,2,raw = FALSE)+poly(hum,2,raw = FALSE)+factor(season)+factor(weathersit)+windspeed+holiday.weekend,data=cnt)
+summary(model_casual)
+```
+
+#registered
+```{r}
+library(psych)
+pairs.panels(cnt[c("season","holiday.weekend","weathersit","temp","hum","windspeed","registered")])
+```
+
+```{r}
+model_register <- lm(registered~poly(temp,2,raw = FALSE)+poly(hum,2,raw = FALSE)+factor(season)+factor(weathersit)+windspeed+holiday.weekend,data=cnt)
+summary(model_register)
+```
+
+#diagnostics
+```{r}
+par(mfrow=c(2,2))
+plot(model_final)
+```
+
+```{r}
+shapiro.test(model_final$residuals)
+```
+```{r}
+library(car)
+ncvTest(model_final)
+```
+
+
+```{r}
+library(car)
+residualPlots(model_final)
+```
+
+```{r}
+outlierTest(model_final)
+```
+
+```{r}
+influencePlot(model_final)
+```
+delete 69 to see if the plots look better
+```{r}
+cnt_sub <- cnt[-69, ]
+```
+
+```{r}
+model_sub <- lm(cnt~poly(temp,2,raw = FALSE)+poly(hum,2,raw = FALSE)+factor(season)+factor(weathersit)+windspeed,data=cnt_sub)
+summary(model_sub)
+```
+
+```{r}
+par(mfrow=c(2,2))
+plot(model_sub)
+```
+```{r}
+library(car)
+ncvTest(model_sub)
+```
+
+
